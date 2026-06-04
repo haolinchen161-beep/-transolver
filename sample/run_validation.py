@@ -46,7 +46,7 @@ CONFIG = {
     # 优化器
     'optimizer': {
         'name': 'AdamW',
-        'kwargs': {'lr': 0.0003, 'weight_decay': 0.00008, 'betas': (0.9, 0.999)},
+        'kwargs': {'lr': 0.0005, 'weight_decay': 0.00008, 'betas': (0.9, 0.999)},
         'gradient_clip': 2.0,
         'gradient_clip_transolver': 1.0,
         'gradient_clip_head_phi': 5.0,
@@ -63,7 +63,7 @@ MODEL_CFG = {
         'n_transolver_layers': 3,
         'num_heads': 8,
         'slice_num': 64,
-        'dropout': 0.1,
+        'dropout': 0.05,  # 极轻正则化, 全力加速 ω 收敛
         'amp_scale': 500000.0,
         'freq_min': 1.0,
         'freq_max': 5000.0,
@@ -149,7 +149,7 @@ def main():
     # 步骤5: 训练
     print("\n--- 步骤5: 训练 ---")
     optimizer = torch.optim.AdamW(net.parameters(), **CONFIG['optimizer']['kwargs'])
-    scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, mode='min', factor=0.5, patience=30, min_lr=1e-6)
+    scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=CONFIG['epochs'], eta_min=1e-6)
     start_epoch = 0
 
     ckpt_path = os.path.join(args.dir, "checkpoint_last")
