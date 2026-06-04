@@ -131,7 +131,7 @@ def main():
     # 步骤4: 初始Loss
     print("\n--- 步骤4: 初始 Loss ---")
     with torch.no_grad():
-        init_loss, _, _ = modal_loss(
+        init_loss, _, _, _ = modal_loss(
             op, batch['modal_omega'].to(args.device),
             zp, batch['modal_zeta'].to(args.device),
             pp, batch['modal_phi'].to(args.device))
