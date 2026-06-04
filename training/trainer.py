@@ -140,12 +140,9 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
 
         mean_loss = np.mean(losses)
 
-        # 学习率调度: ReduceLROnPlateau 需要传入 loss
+        # 学习率调度
         if scheduler is not None:
-            if isinstance(scheduler, torch.optim.lr_scheduler.ReduceLROnPlateau):
-                scheduler.step(mean_loss)
-            else:
-                scheduler.step()
+            scheduler.step()
 
         raw_w = np.mean(omega_losses) if omega_losses else 0
         raw_z = np.mean(zeta_losses) if zeta_losses else 0
