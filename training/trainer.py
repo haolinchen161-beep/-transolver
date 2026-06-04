@@ -34,7 +34,6 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
     total_epochs = config.get('epochs', 2000)
 
     frf_weight = config.get('frf_loss_weight', 50.0)
-    zeta_weight = config.get('zeta_loss_weight', 200.0)
 
     # 数据增强器
     augmenter = create_augmenter(config)
@@ -109,8 +108,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
                         omega_pred, batch['modal_omega'].to(args.device),
                         zeta_pred, batch['modal_zeta'].to(args.device),
                         phi_pred, batch['modal_phi'].to(args.device),
-                        batch_idx=geometry.batch,
-                        zeta_weight=zeta_weight)
+                        batch_idx=geometry.batch)
                     loss = loss_m + frf_weight * frf_loss(frf_pred, batch['point_frf'].to(args.device))
                 else:
                     _, omega_pred, zeta_pred, phi_pred = net(geometry)
@@ -118,8 +116,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
                         omega_pred, batch['modal_omega'].to(args.device),
                         zeta_pred, batch['modal_zeta'].to(args.device),
                         phi_pred, batch['modal_phi'].to(args.device),
-                        batch_idx=geometry.batch,
-                        zeta_weight=zeta_weight, phi_weight=1.0)  # Phase1: φ权重×1, 让ω独享梯度
+                        batch_idx=geometry.batch)
                     loss = loss_m
 
             losses.append(loss.detach().cpu().item())
@@ -157,7 +154,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
         wgt_p = np.mean(weighted_p_losses) if weighted_p_losses else 0
         omega_pct = raw_w * 100
         zeta_pct  = raw_z * 100
-        phi_pct = (np.sqrt(wgt_p / 100.0) / 14.0) * 100 if wgt_p > 0 else 0
+        phi_pct = wgt_p * 100  # 1-MAC, 直接乘100
         omega_share = wgt_w / mean_loss * 100 if mean_loss > 0 else 0
         phi_share = wgt_p / mean_loss * 100 if mean_loss > 0 else 0
         _log(f"Epoch {epoch:4d} | w_err={omega_pct:.1f}% z_err={zeta_pct:.1f}% phi={phi_pct:.1f}% | w占{omega_share:.0f}% phi占{phi_share:.0f}% | total={mean_loss:.2e}", logger)
