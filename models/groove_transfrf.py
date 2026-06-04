@@ -222,8 +222,17 @@ class GrooveTransFRF(nn.Module):
 
         # ============================================
         # 步骤1: Transolver 几何编码 (全部 N 节点, 无降采样)
+        # 坐标逐样本归一化到 [-1,1], 帮助 SliceAttention 均匀切片
         # ============================================
-        node_tokens = self.encoder(points, point_feat)
+        pts_norm = points.clone()
+        B_norm = int(batch.max().item()) + 1
+        for b in range(B_norm):
+            mask = batch == b
+            p_b = points[mask]
+            lo, hi = p_b.min(dim=0, keepdim=True)[0], p_b.max(dim=0, keepdim=True)[0]
+            pts_norm[mask] = (p_b - lo) / (hi - lo + 1e-8) * 2.0 - 1.0
+
+        node_tokens = self.encoder(pts_norm, point_feat)
         # (total_N, hidden_dim)
 
         # ============================================
@@ -240,17 +249,20 @@ class GrooveTransFRF(nn.Module):
         # ============================================
         physics_prior = self._compute_physics_prior(point_feat, batch)  # (B, 4)
 
-        # 微观流: modal_out前K + 全节点mean+max双池化→几何特征
+        # 微观流: modal_out前K + mean + TopK(128)池化→几何特征
+        # TopK替代max: 取前128个最强节点平均, 每个得1/128梯度 (vs max仅1个节点)
         B_val = int(batch.max().item()) + 1
         dev = node_tokens.device
+        K_topk = 128
         geo_mean = torch.zeros(B_val, self.hidden_dim, device=dev)
-        geo_max = torch.zeros(B_val, self.hidden_dim, device=dev)
+        geo_topk = torch.zeros(B_val, self.hidden_dim, device=dev)
         for b in range(B_val):
             mask = batch == b
-            toks = node_tokens[mask]
+            toks = node_tokens[mask]  # (N_b, D)
             geo_mean[b] = toks.mean(dim=0)
-            geo_max[b] = toks.max(dim=0)[0]
-        micro_in = torch.cat([modal_out[:, :self.n_modes], geo_mean, geo_max], dim=-1)
+            kt = min(K_topk, toks.size(0))
+            geo_topk[b] = torch.topk(toks, kt, dim=0)[0].mean(dim=0)
+        micro_in = torch.cat([modal_out[:, :self.n_modes], geo_mean, geo_topk], dim=-1)
 
         omega_coarse = F.softplus(self.macro_omega(physics_prior)) * 15000.0
         omega_fine = torch.tanh(self.micro_omega(micro_in)) * 5000.0
