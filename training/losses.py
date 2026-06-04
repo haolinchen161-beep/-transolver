@@ -19,7 +19,7 @@ def mac_loss(pred_phi, true_phi):
 def modal_loss(omega_pred, omega_target,
                zeta_pred, zeta_target,
                phi_pred, phi_target, batch_idx=None,
-               omega_weight=50.0, zeta_weight=10.0, phi_weight=1.0):
+               omega_weight=50.0, zeta_weight=2.0, phi_weight=1.0):
     """模态参数损失。
 
     权重设计: ω相对误差天然小(~1e-4), 需omega_weight=50补偿;
@@ -45,7 +45,7 @@ def modal_loss(omega_pred, omega_target,
         phi_t = phi_target.reshape(-1, phi_target.shape[-1])
         loss_phi = mac_loss(phi_p, phi_t) * phi_weight
 
-    return loss_omega + loss_zeta + loss_phi, loss_omega, loss_phi
+    return loss_omega + loss_zeta + loss_phi, loss_omega, loss_zeta, loss_phi
 
 
 def frf_loss(frf_pred, frf_target):
