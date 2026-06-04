@@ -19,12 +19,9 @@ def mac_loss(pred_phi, true_phi):
 def modal_loss(omega_pred, omega_target,
                zeta_pred, zeta_target,
                phi_pred, phi_target, batch_idx=None,
-               omega_weight=50.0, zeta_weight=2.0, phi_weight=1.0):
+               omega_weight=200.0, zeta_weight=0.2, phi_weight=0.3):
     """模态参数损失。
-
-    权重设计: ω相对误差天然小(~1e-4), 需omega_weight=50补偿;
-             ζ相对误差(~1e-2)适中; φ MAC值~0.01-0.1。
-             训练初期 ω 主导, 后期自动让位给 φ/ζ。
+    ω×50, ζ×2, φ×0.3: φ 降权让 ω 在 Phase1 占主导 (>70%)
     """
     loss_omega = torch.mean(((omega_pred - omega_target) / (omega_target + 1e-8))**2) * omega_weight
     loss_zeta  = torch.mean(((zeta_pred - zeta_target) / (zeta_target + 1e-8))**2) * zeta_weight
