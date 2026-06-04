@@ -52,7 +52,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
 
     try:
       for epoch in range(start_epoch, total_epochs):
-        losses, omega_losses, phi_losses, zeta_losses = [], [], [], []
+        losses, omega_losses, zeta_losses = [], [], []
         weighted_w_losses, weighted_p_losses = [], []
 
         # ---- 两阶段判定 (动态解锁: ω<1% 或 epoch>600) ----
@@ -126,7 +126,6 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
             zeta_target = batch['modal_zeta'].to(args.device)
             zeta_rel_err = torch.abs(zeta_pred - zeta_target) / (zeta_target + 1e-8)
             zeta_losses.append(zeta_rel_err.mean().detach().cpu().item())
-            phi_losses.append(F.mse_loss(phi_pred, batch['modal_phi'].to(args.device)).detach().cpu().item())
             weighted_w_losses.append(l_w.detach().cpu().item())
             weighted_p_losses.append(l_p.detach().cpu().item())
 
@@ -149,7 +148,6 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
 
         raw_w = np.mean(omega_losses) if omega_losses else 0
         raw_z = np.mean(zeta_losses) if zeta_losses else 0
-        raw_p = np.mean(phi_losses) if phi_losses else 0
         wgt_w = np.mean(weighted_w_losses) if weighted_w_losses else 0
         wgt_p = np.mean(weighted_p_losses) if weighted_p_losses else 0
         omega_pct = raw_w * 100
