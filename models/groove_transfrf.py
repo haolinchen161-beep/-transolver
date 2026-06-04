@@ -253,7 +253,7 @@ class GrooveTransFRF(nn.Module):
         # TopK替代max: 取前128个最强节点平均, 每个得1/128梯度 (vs max仅1个节点)
         B_val = int(batch.max().item()) + 1
         dev = node_tokens.device
-        K_topk = 128
+        K_topk = 256  # 最大凹槽~600节点, 256覆盖完整凹槽轮廓
         geo_mean = torch.zeros(B_val, self.hidden_dim, device=dev)
         geo_topk = torch.zeros(B_val, self.hidden_dim, device=dev)
         for b in range(B_val):
@@ -265,7 +265,7 @@ class GrooveTransFRF(nn.Module):
         micro_in = torch.cat([modal_out[:, :self.n_modes], geo_mean, geo_topk], dim=-1)
 
         omega_coarse = F.softplus(self.macro_omega(physics_prior)) * 15000.0
-        omega_fine = torch.tanh(self.micro_omega(micro_in)) * 5000.0
+        omega_fine = torch.tanh(self.micro_omega(micro_in)) * 2000.0  # ±318Hz, 宏观已锁定基线
         omega = omega_coarse + omega_fine
 
         zeta = F.softplus(modal_out[:, self.n_modes:]) * 0.004 + 1e-4
