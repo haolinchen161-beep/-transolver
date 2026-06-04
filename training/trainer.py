@@ -53,7 +53,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
     try:
       for epoch in range(start_epoch, total_epochs):
         losses, omega_losses, zeta_losses = [], [], []
-        weighted_w_losses, weighted_p_losses = [], []
+        weighted_w_losses, weighted_z_losses, weighted_p_losses = [], [], []
 
         # ---- 两阶段判定 (动态解锁: ω<1% 或 epoch>600) ----
         in_phase1 = not phase2_unlocked
@@ -104,7 +104,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
                                 phi_exc_corrected[i] = phi_exc[i] * torch.sign(dot + 1e-8)
                         phi_exc = phi_exc_corrected
                     frf_pred, omega_pred, zeta_pred, phi_pred = net(geometry, frequencies, phi_exc)
-                    loss_m, l_w, l_p = modal_loss(
+                    loss_m, l_w, l_z, l_p = modal_loss(
                         omega_pred, batch['modal_omega'].to(args.device),
                         zeta_pred, batch['modal_zeta'].to(args.device),
                         phi_pred, batch['modal_phi'].to(args.device),
@@ -112,7 +112,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
                     loss = loss_m + frf_weight * frf_loss(frf_pred, batch['point_frf'].to(args.device))
                 else:
                     _, omega_pred, zeta_pred, phi_pred = net(geometry)
-                    loss_m, l_w, l_p = modal_loss(
+                    loss_m, l_w, l_z, l_p = modal_loss(
                         omega_pred, batch['modal_omega'].to(args.device),
                         zeta_pred, batch['modal_zeta'].to(args.device),
                         phi_pred, batch['modal_phi'].to(args.device),
@@ -127,6 +127,7 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
             zeta_rel_err = torch.abs(zeta_pred - zeta_target) / (zeta_target + 1e-8)
             zeta_losses.append(zeta_rel_err.mean().detach().cpu().item())
             weighted_w_losses.append(l_w.detach().cpu().item())
+            weighted_z_losses.append(l_z.detach().cpu().item())
             weighted_p_losses.append(l_p.detach().cpu().item())
 
             scaler.scale(loss).backward()
@@ -149,13 +150,15 @@ def train(args, config, model_cfg, net, dataloader, optimizer,
         raw_w = np.mean(omega_losses) if omega_losses else 0
         raw_z = np.mean(zeta_losses) if zeta_losses else 0
         wgt_w = np.mean(weighted_w_losses) if weighted_w_losses else 0
+        wgt_z = np.mean(weighted_z_losses) if weighted_z_losses else 0
         wgt_p = np.mean(weighted_p_losses) if weighted_p_losses else 0
         omega_pct = raw_w * 100
         zeta_pct  = raw_z * 100
         phi_pct = wgt_p * 100  # 1-MAC, 直接乘100
         omega_share = wgt_w / mean_loss * 100 if mean_loss > 0 else 0
-        phi_share = wgt_p / mean_loss * 100 if mean_loss > 0 else 0
-        _log(f"Epoch {epoch:4d} | w_err={omega_pct:.1f}% z_err={zeta_pct:.1f}% phi={phi_pct:.1f}% | w占{omega_share:.0f}% phi占{phi_share:.0f}% | total={mean_loss:.2e}", logger)
+        zeta_share  = wgt_z / mean_loss * 100 if mean_loss > 0 else 0
+        phi_share   = wgt_p / mean_loss * 100 if mean_loss > 0 else 0
+        _log(f"Epoch {epoch:4d} | w={omega_pct:.1f}% z={zeta_pct:.1f}% phi={phi_pct:.1f}% | 占比 w{omega_share:.0f}% z{zeta_share:.0f}% phi{phi_share:.0f}% | total={mean_loss:.2e}", logger)
 
         # 动态解锁: ω误差 < 5.0% 即可, FRF 介入帮 ω 对齐共振峰
         # ω需<1% (半功率带宽~6Hz, 10Hz误差就跑偏)
