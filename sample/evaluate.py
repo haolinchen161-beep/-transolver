@@ -17,7 +17,7 @@ MODEL_CFG = {
     'encoder_kwargs': {
         'coord_dim': 3, 'point_feat_dim': 7,
         'hidden_dim': 256, 'n_modes': 3,
-        'n_transolver_layers': 3, 'num_heads': 8, 'slice_num': 64, 'dropout': 0.1,
+        'n_transolver_layers': 3, 'num_heads': 8, 'slice_num': 64, 'dropout': 0.05,
         'amp_scale': 500000.0, 'freq_min': 1.0, 'freq_max': 5000.0,
     },
     'decoder_kwargs': {},
