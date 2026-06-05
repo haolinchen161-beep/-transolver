@@ -59,4 +59,4 @@ def frf_loss(frf_pred, frf_target):
     cdf_target = torch.cumsum(amp_target_norm, dim=-1)
 
     loss_cdf = F.l1_loss(cdf_pred, cdf_target)
-    return loss_mse + 10.0 * loss_cdf
+    return 0.01 * loss_mse + 100.0 * loss_cdf  # CDF强制横向对齐峰值, MSE仅精修
