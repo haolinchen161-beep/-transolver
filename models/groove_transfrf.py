@@ -105,7 +105,7 @@ class GrooveTransFRF(nn.Module):
         # 双流残差 ω 解码
         # ============================================
         self.macro_omega = nn.Sequential(
-            nn.Linear(4, 64), nn.GELU(),           # 4 = ws, avg_logK, constraint_ratio, mean_Z/H
+            nn.Linear(6, 64), nn.GELU(),           # 6 = ws,logK,constraint,Z/H,Z3/H3,min_Z/H
             nn.Linear(64, n_modes)
         )
         self.micro_omega = nn.Sequential(          # 微观流: modal_out前K + mean+max双池化->Delta_omega
@@ -167,11 +167,17 @@ class GrooveTransFRF(nn.Module):
                 avg_logK = torch.tensor(0.0, device=device)
                 constraint_ratio = torch.tensor(0.0, device=device)
 
-            mean_thickness = z_norm[mask].mean()
+            z_b = z_norm[mask]
+            mean_thickness = z_b.mean()
+            mean_z3 = (z_b ** 3).mean()  # h³ 抗弯刚度
+            min_z = z_b.min()            # 最薄弱截面
 
-            physics_list.append(torch.stack([ws_b, avg_logK, constraint_ratio, mean_thickness]))
+            physics_list.append(torch.stack([
+                ws_b, avg_logK, constraint_ratio, mean_thickness,
+                mean_z3, min_z
+            ]))
 
-        return torch.stack(physics_list)  # (B, 4)
+        return torch.stack(physics_list)  # (B, 6)
 
     def _prepare_inputs(self, geometry_data):
         """
@@ -239,7 +245,7 @@ class GrooveTransFRF(nn.Module):
         # 步骤2: 双路径解码
         # ============================================
         # 局部路径: 模态振型 (逐节点)
-        phi = self.head_phi(node_tokens)  # (total_N, K)
+        phi = self.head_phi(node_tokens.detach())  # (total_N, K)  # detach切断φ梯度对主干的噪声
 
         # 全局路径: 注意力池化 → 模态参数
         modal_out = self.global_pool(node_tokens, batch)  # (B, 2K)
@@ -247,7 +253,7 @@ class GrooveTransFRF(nn.Module):
         # ============================================
         # 步骤3: 双流残差 ω + ζ
         # ============================================
-        physics_prior = self._compute_physics_prior(point_feat, batch)  # (B, 4)
+        physics_prior = self._compute_physics_prior(point_feat, batch)  # (B, 6)
 
         # 微观流: modal_out前K + mean + TopK(128)池化→几何特征
         # TopK替代max: 取前128个最强节点平均, 每个得1/128梯度 (vs max仅1个节点)
@@ -265,10 +271,10 @@ class GrooveTransFRF(nn.Module):
         micro_in = torch.cat([modal_out[:, :self.n_modes], geo_mean, geo_topk], dim=-1)
 
         omega_coarse = F.softplus(self.macro_omega(physics_prior)) * 15000.0
-        omega_fine = torch.tanh(self.micro_omega(micro_in)) * 2000.0  # ±318Hz, 宏观已锁定基线
-        omega = omega_coarse + omega_fine
+        micro_ratio = torch.tanh(self.micro_omega(micro_in)) * 0.30  # ±30%刚度折减
+        omega = omega_coarse * (1.0 + micro_ratio)  # 乘法修正: 凹槽是百分比
 
-        zeta = F.softplus(modal_out[:, self.n_modes:]) * 0.004 + 1e-4
+        zeta = torch.sigmoid(modal_out[:, self.n_modes:]) * 0.05 + 1e-4  # 约束[0,0.05]
 
         # ============================================
         # 步骤4: 物理重建 FRF
