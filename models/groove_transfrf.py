@@ -108,8 +108,8 @@ class GrooveTransFRF(nn.Module):
             nn.Linear(6, 64), nn.GELU(),           # 6 = ws,logK,constraint,Z/H,Z3/H3,min_Z/H
             nn.Linear(64, n_modes)
         )
-        self.micro_omega = nn.Sequential(          # 微观流: modal_out前K + mean+max双池化->Delta_omega
-            nn.Linear(n_modes + hidden_dim * 2, 64), nn.GELU(),
+        self.micro_omega = nn.Sequential(          # 微观流: modal_out前K + 振型加权几何
+            nn.Linear(n_modes + n_modes * hidden_dim, 64), nn.GELU(),
             nn.Linear(64, n_modes)
         )
         nn.init.constant_(self.macro_omega[-1].weight, 0.0)
@@ -255,20 +255,19 @@ class GrooveTransFRF(nn.Module):
         # ============================================
         physics_prior = self._compute_physics_prior(point_feat, batch)  # (B, 6)
 
-        # 微观流: modal_out前K + mean + TopK(128)池化→几何特征
-        # TopK替代max: 取前128个最强节点平均, 每个得1/128梯度 (vs max仅1个节点)
+        # 振型加权池化: 每阶模态只在变形最大处提取几何损伤 (瑞利商原理)
         B_val = int(batch.max().item()) + 1
         dev = node_tokens.device
-        K_topk = 256  # 最大凹槽~600节点, 256覆盖完整凹槽轮廓
-        geo_mean = torch.zeros(B_val, self.hidden_dim, device=dev)
-        geo_topk = torch.zeros(B_val, self.hidden_dim, device=dev)
+        phi_abs = torch.abs(phi)  # (total_N, K)
+        mode_geo = torch.zeros(B_val, self.n_modes * self.hidden_dim, device=dev)
         for b in range(B_val):
             mask = batch == b
-            toks = node_tokens[mask]  # (N_b, D)
-            geo_mean[b] = toks.mean(dim=0)
-            kt = min(K_topk, toks.size(0))
-            geo_topk[b] = torch.topk(toks, kt, dim=0)[0].mean(dim=0)
-        micro_in = torch.cat([modal_out[:, :self.n_modes], geo_mean, geo_topk], dim=-1)
+            toks = node_tokens[mask]    # (N_b, D)
+            pb = phi_abs[mask]          # (N_b, K)
+            pw = pb / (pb.sum(dim=0, keepdim=True) + 1e-8)  # 振型归一化权重
+            weighted = torch.matmul(pw.transpose(0, 1), toks)  # (K, D) 每阶模态专属几何
+            mode_geo[b] = weighted.flatten()
+        micro_in = torch.cat([modal_out[:, :self.n_modes], mode_geo], dim=-1)
 
         omega_coarse = F.softplus(self.macro_omega(physics_prior)) * 15000.0
         micro_ratio = torch.tanh(self.micro_omega(micro_in)) * 0.30  # ±30%刚度折减
