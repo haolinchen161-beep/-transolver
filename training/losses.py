@@ -46,5 +46,17 @@ def modal_loss(omega_pred, omega_target,
 
 
 def frf_loss(frf_pred, frf_target):
-    # frf_pred 已是 asinh 空间, frf_target 也是 asinh 空间, 直接比较
-    return F.mse_loss(frf_pred, frf_target)
+    # CDF Wasserstein: 共振峰位置偏差→横向引力, MSE: 峰值高度精修
+    loss_mse = F.mse_loss(frf_pred, frf_target)
+
+    amp_pred = torch.norm(frf_pred, dim=-1) + 1e-8
+    amp_target = torch.norm(frf_target, dim=-1) + 1e-8
+
+    amp_pred_norm = amp_pred / amp_pred.sum(dim=-1, keepdim=True)
+    amp_target_norm = amp_target / amp_target.sum(dim=-1, keepdim=True)
+
+    cdf_pred = torch.cumsum(amp_pred_norm, dim=-1)
+    cdf_target = torch.cumsum(amp_target_norm, dim=-1)
+
+    loss_cdf = F.l1_loss(cdf_pred, cdf_target)
+    return loss_mse + 10.0 * loss_cdf
